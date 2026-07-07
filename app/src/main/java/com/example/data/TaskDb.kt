@@ -14,6 +14,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
+data class PlaywrightDayStat(
+    val dayLabel: String,
+    val successCount: Int,
+    val failureCount: Int
+)
+
 // --- Entities ---
 
 @Entity(tableName = "security_logs")
@@ -39,6 +45,15 @@ data class EmailCampaign(
     val clickedCount: Int = 0
 )
 
+@Entity(tableName = "email_templates")
+data class EmailTemplate(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val subject: String,
+    val body: String, // variables: {{job_name}}, {{target_url}}, {{failure_time}}, {{log_snippet}}
+    val isSystem: Boolean = false
+)
+
 @Entity(tableName = "playwright_jobs")
 data class PlaywrightJob(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -50,7 +65,8 @@ data class PlaywrightJob(
     val cronSchedule: String = "Manual",
     val durationMs: Long = 0L,
     val logOutput: String = "",
-    val isHighPriority: Boolean = false
+    val isHighPriority: Boolean = false,
+    val failureEmailTemplateId: Int? = null
 )
 
 // --- DAO ---
@@ -98,13 +114,32 @@ interface AuthAppDao {
 
     @Delete
     suspend fun deletePlaywrightJob(job: PlaywrightJob)
+
+    // Email Templates
+    @Query("SELECT * FROM email_templates ORDER BY id DESC")
+    fun getAllEmailTemplates(): Flow<List<EmailTemplate>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEmailTemplate(template: EmailTemplate): Long
+
+    @Update
+    suspend fun updateEmailTemplate(template: EmailTemplate)
+
+    @Delete
+    suspend fun deleteEmailTemplate(template: EmailTemplate)
+
+    @Query("DELETE FROM email_templates WHERE id = :id")
+    suspend fun deleteEmailTemplateById(id: Int)
+
+    @Query("SELECT * FROM email_templates WHERE id = :id")
+    suspend fun getEmailTemplateById(id: Int): EmailTemplate?
 }
 
 // --- Database ---
 
 @Database(
-    entities = [SecurityLog::class, EmailCampaign::class, PlaywrightJob::class],
-    version = 2,
+    entities = [SecurityLog::class, EmailCampaign::class, PlaywrightJob::class, EmailTemplate::class],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -139,6 +174,7 @@ class TaskRepository(private val authAppDao: AuthAppDao) {
     val allSecurityLogs: Flow<List<SecurityLog>> = authAppDao.getAllSecurityLogs()
     val allEmailCampaigns: Flow<List<EmailCampaign>> = authAppDao.getAllEmailCampaigns()
     val allPlaywrightJobs: Flow<List<PlaywrightJob>> = authAppDao.getAllPlaywrightJobs()
+    val allEmailTemplates: Flow<List<EmailTemplate>> = authAppDao.getAllEmailTemplates()
 
     suspend fun insertLog(log: SecurityLog) = authAppDao.insertSecurityLog(log)
     suspend fun clearLogs() = authAppDao.clearSecurityLogs()
@@ -152,4 +188,10 @@ class TaskRepository(private val authAppDao: AuthAppDao) {
     suspend fun insertPlaywrightJob(job: PlaywrightJob) = authAppDao.insertPlaywrightJob(job)
     suspend fun updatePlaywrightJob(job: PlaywrightJob) = authAppDao.updatePlaywrightJob(job)
     suspend fun deletePlaywrightJob(job: PlaywrightJob) = authAppDao.deletePlaywrightJob(job)
+
+    suspend fun insertEmailTemplate(template: EmailTemplate) = authAppDao.insertEmailTemplate(template)
+    suspend fun updateEmailTemplate(template: EmailTemplate) = authAppDao.updateEmailTemplate(template)
+    suspend fun deleteEmailTemplate(template: EmailTemplate) = authAppDao.deleteEmailTemplate(template)
+    suspend fun deleteEmailTemplateById(id: Int) = authAppDao.deleteEmailTemplateById(id)
+    suspend fun getEmailTemplateById(id: Int): EmailTemplate? = authAppDao.getEmailTemplateById(id)
 }

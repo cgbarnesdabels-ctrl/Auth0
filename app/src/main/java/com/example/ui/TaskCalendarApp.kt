@@ -5,6 +5,7 @@
 package com.example.ui
 
 import android.widget.Toast
+import android.content.Intent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.ViewGroup
@@ -31,6 +32,17 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontStyle
+import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -48,6 +60,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import com.example.data.EmailCampaign
 import com.example.data.PlaywrightJob
 import com.example.data.SecurityLog
+import com.example.data.PlaywrightDayStat
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -62,6 +75,140 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val userEmail by viewModel.userEmail.collectAsStateWithLifecycle()
     val securityLogs by viewModel.securityLogs.collectAsStateWithLifecycle()
+    val activeFailurePopup by viewModel.activeFailurePopup.collectAsStateWithLifecycle()
+
+    if (activeFailurePopup != null) {
+        val (job, campaign) = activeFailurePopup!!
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissFailurePopup() },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Error,
+                        contentDescription = "System Failure",
+                        tint = HighPriorityColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Text(
+                        text = "CRITICAL SYSTEM FAILURE",
+                        style = TextStyle(
+                            color = HighPriorityColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "A high-priority E2E browser automation job has failed! A notification campaign has been dispatched according to your designated template rules.",
+                        style = TextStyle(color = TextPrimaryDark, fontSize = 13.sp)
+                    )
+
+                    // Job Details
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.03f))
+                            .border(1.dp, ElegantBorderColor, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "JOB DETAILS",
+                            style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Name:", style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp))
+                            Text(job.name, style = TextStyle(color = TextPrimaryDark, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Target URL:", style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp))
+                            Text(job.targetUrl, style = TextStyle(color = TextPrimaryDark, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Run Time:", style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp))
+                            val formattedTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(job.lastRunTime))
+                            Text(formattedTime, style = TextStyle(color = TextPrimaryDark, fontSize = 12.sp))
+                        }
+                    }
+
+                    // Email Campaign Details
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.03f))
+                            .border(1.dp, ElegantBorderColor, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "DISPATCHED EMAIL NOTIFICATION",
+                            style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Campaign Subject:", style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp))
+                            Text(campaign.subject, style = TextStyle(color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Generated Message Body:",
+                            style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp)
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF131215))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = campaign.body,
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = TextSecondaryDark
+                                ),
+                                maxLines = 6,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        currentTab = 4 // Navigate to Playwright tab
+                        viewModel.dismissFailurePopup()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Investigate In Runner", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissFailurePopup() }) {
+                    Text("Acknowledge", color = TextSecondaryDark)
+                }
+            },
+            containerColor = CardBg,
+            modifier = Modifier.testTag("dialog_critical_failure_popup")
+        )
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -289,6 +436,13 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
 fun DashboardTabScreen(viewModel: TaskViewModel) {
     val context = LocalContext.current
     
+    val isSyncServiceRunning by viewModel.isSyncServiceRunning.collectAsStateWithLifecycle()
+    val syncIntervalSeconds by viewModel.syncIntervalSeconds.collectAsStateWithLifecycle()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val syncStatusMessage by viewModel.syncStatusMessage.collectAsStateWithLifecycle()
+    val offlineMode by viewModel.offlineMode.collectAsStateWithLifecycle()
+    
     val isEmailConnected by viewModel.isEmailConnected.collectAsStateWithLifecycle()
     val connectedEmailAddress by viewModel.connectedEmailAddress.collectAsStateWithLifecycle()
     val isConnectingEmail by viewModel.isConnectingEmail.collectAsStateWithLifecycle()
@@ -302,6 +456,7 @@ fun DashboardTabScreen(viewModel: TaskViewModel) {
     val playwrightSummary by viewModel.playwrightSummary.collectAsStateWithLifecycle()
     val isGeneratingSummary by viewModel.isGeneratingSummary.collectAsStateWithLifecycle()
     val playwrightJobs by viewModel.playwrightJobs.collectAsStateWithLifecycle()
+    val playwrightHistoricalStats by viewModel.playwrightHistoricalStats.collectAsStateWithLifecycle()
 
     var showEmailConnectDialog by remember { mutableStateOf(false) }
     var showDriveConnectDialog by remember { mutableStateOf(false) }
@@ -662,6 +817,264 @@ fun DashboardTabScreen(viewModel: TaskViewModel) {
             }
         }
 
+        // PLAYWRIGHT BACKUP & OFFLINE SYNC ENGINE Section
+        item {
+            Text(
+                text = "PLAYWRIGHT BACKUP & OFFLINE SYNC ENGINE",
+                style = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                ),
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+            )
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, ElegantBorderColor, RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Title and status
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isSyncServiceRunning && !offlineMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                        else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (offlineMode) Icons.Default.CloudOff else Icons.Default.CloudSync,
+                                    contentDescription = null,
+                                    tint = if (isSyncServiceRunning && !offlineMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Cloud Log Sync Engine",
+                                    style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                )
+                                Text(
+                                    text = if (offlineMode) "Offline Cache Active (SQLite Rendering)" else "Active Sync: dabelstech-k8s-workers-east",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp)
+                                )
+                            }
+                        }
+
+                        // Pulsing status dot
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            offlineMode -> Color(0xFFE57373) // red-ish
+                                            isSyncing -> Color(0xFF64B5F6) // blue
+                                            isSyncServiceRunning -> Color(0xFF81C784) // green
+                                            else -> Color(0xFFFFB74D) // orange (paused)
+                                        }
+                                    )
+                            )
+                            Text(
+                                text = when {
+                                    offlineMode -> "Offline"
+                                    isSyncing -> "Syncing..."
+                                    isSyncServiceRunning -> "Live"
+                                    else -> "Paused"
+                                },
+                                style = TextStyle(
+                                    color = TextSecondaryDark,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+
+                    Divider(color = ElegantBorderColor.copy(alpha = 0.5f), thickness = 1.dp)
+
+                    // Switches for config
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Periodic API Sync Service",
+                                    style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                )
+                                Text(
+                                    text = "Query and sync Playwright job execution logs from server.",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp)
+                                )
+                            }
+                            Switch(
+                                checked = isSyncServiceRunning,
+                                onCheckedChange = { viewModel.toggleSyncService(it) },
+                                enabled = !offlineMode
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Force Offline Cache Mode",
+                                    style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                )
+                                Text(
+                                    text = "Simulate zero network connectivity and render from local database.",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp)
+                                )
+                            }
+                            Switch(
+                                checked = offlineMode,
+                                onCheckedChange = { viewModel.setOfflineMode(it) }
+                            )
+                        }
+                    }
+
+                    // Sync interval segment controller
+                    if (isSyncServiceRunning && !offlineMode) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Synchronization Interval",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(10, 30, 60).forEach { interval ->
+                                    val isSelected = syncIntervalSeconds == interval
+                                    Button(
+                                        onClick = { viewModel.setSyncInterval(interval) },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.05f),
+                                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else TextPrimaryDark
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(36.dp)
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) Color.Transparent else ElegantBorderColor,
+                                                RoundedCornerShape(10.dp)
+                                            ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("${interval}s", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Progress indicators & Last sync details
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(16.dp))
+                            .border(1.dp, ElegantBorderColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "STATUS: $syncStatusMessage",
+                                    style = TextStyle(
+                                        color = if (offlineMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                )
+                                Text(
+                                    text = if (lastSyncTime == null) "No synchronization recorded yet"
+                                    else "Last Successful Backup: " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(lastSyncTime!!)),
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp)
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.syncPlaywrightJobs() },
+                                enabled = !isSyncing && !offlineMode,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(32.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.onSecondary,
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Sync, contentDescription = "Manual sync", modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sync Now", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // SYSTEM METRICS & ANALYTICS Section
+        item {
+            Text(
+                text = "SYSTEM METRICS & ANALYTICS",
+                style = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                ),
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+            )
+        }
+
+        item {
+            Playwright30DayPerformanceChart(historicalStats = playwrightHistoricalStats)
+        }
+
         // GEMINI AI INTEGRATION Section
         item {
             Text(
@@ -871,6 +1284,325 @@ fun DashboardTabScreen(viewModel: TaskViewModel) {
 }
 
 // ==========================================
+// WORKLOAD PERFORMANCE CHART (METRICS GRAPH)
+// ==========================================
+@Composable
+fun Playwright30DayPerformanceChart(historicalStats: List<PlaywrightDayStat>) {
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    
+    // Calculate totals
+    val totalSuccess = historicalStats.sumOf { it.successCount }
+    val totalFailure = historicalStats.sumOf { it.failureCount }
+    val totalRuns = totalSuccess + totalFailure
+    val successRate = if (totalRuns > 0) (totalSuccess.toFloat() / totalRuns * 100).toInt() else 100
+    
+    Card(
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, ElegantBorderColor, RoundedCornerShape(24.dp))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "30-DAY OPERATIONAL METRICS",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.5.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Playwright E2E Runner",
+                        style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    )
+                }
+                
+                // Success Badge
+                Box(
+                    modifier = Modifier
+                        .background(LowPriorityColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                        .border(0.5.dp, LowPriorityColor, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "$successRate% Success",
+                        style = TextStyle(color = LowPriorityColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    )
+                }
+            }
+            
+            // Core Metrics Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Metric 1: Total Runs
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+                        .border(0.5.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text("Total Runs", style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("$totalRuns", style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 16.sp))
+                }
+                // Metric 2: Successes
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+                        .border(0.5.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text("Successes", style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("$totalSuccess", style = TextStyle(color = LowPriorityColor, fontWeight = FontWeight.Bold, fontSize = 16.sp))
+                }
+                // Metric 3: Failures
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+                        .border(0.5.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text("Failures", style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("$totalFailure", style = TextStyle(color = HighPriorityColor, fontWeight = FontWeight.Bold, fontSize = 16.sp))
+                }
+            }
+            
+            // Interactive Chart Canvas Box
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(Color(0xFF131215), RoundedCornerShape(16.dp))
+                        .border(0.5.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                        .padding(vertical = 12.dp, horizontal = 16.dp)
+                ) {
+                    if (historicalStats.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No historical data available", color = TextSecondaryDark, fontSize = 12.sp)
+                        }
+                    } else {
+                        val maxVal = (historicalStats.maxOf { maxOf(it.successCount, it.failureCount) } + 4).coerceAtLeast(10).toFloat()
+                        
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(historicalStats) {
+                                    detectTapGestures(
+                                        onTap = { offset ->
+                                            val width = size.width
+                                            val stepX = width / (historicalStats.size - 1)
+                                            val index = (offset.x / stepX).roundToInt().coerceIn(0, historicalStats.size - 1)
+                                            selectedIndex = index
+                                        }
+                                    )
+                                }
+                        ) {
+                            val width = size.width
+                            val height = size.height
+                            val pointsCount = historicalStats.size
+                            val stepX = width / (pointsCount - 1)
+                            
+                            // Draw horizontal grid lines
+                            val gridLines = 4
+                            for (i in 0..gridLines) {
+                                val y = height * (1f - i.toFloat() / gridLines)
+                                drawLine(
+                                    color = ElegantBorderColor.copy(alpha = 0.15f),
+                                    start = Offset(0f, y),
+                                    end = Offset(width, y),
+                                    strokeWidth = 1f
+                                )
+                            }
+                            
+                            // Create Success Path & Area
+                            val successPath = Path()
+                            val successAreaPath = Path()
+                            
+                            // Create Failure Path & Area
+                            val failurePath = Path()
+                            val failureAreaPath = Path()
+                            
+                            historicalStats.forEachIndexed { index, stat ->
+                                val x = index * stepX
+                                val successY = height * (1f - stat.successCount.toFloat() / maxVal)
+                                val failureY = height * (1f - stat.failureCount.toFloat() / maxVal)
+                                
+                                if (index == 0) {
+                                    successPath.moveTo(x, successY)
+                                    successAreaPath.moveTo(x, height)
+                                    successAreaPath.lineTo(x, successY)
+                                    
+                                    failurePath.moveTo(x, failureY)
+                                    failureAreaPath.moveTo(x, height)
+                                    failureAreaPath.lineTo(x, failureY)
+                                } else {
+                                    successPath.lineTo(x, successY)
+                                    successAreaPath.lineTo(x, successY)
+                                    
+                                    failurePath.lineTo(x, failureY)
+                                    failureAreaPath.lineTo(x, failureY)
+                                }
+                                
+                                if (index == pointsCount - 1) {
+                                    successAreaPath.lineTo(x, height)
+                                    successAreaPath.close()
+                                    
+                                    failureAreaPath.lineTo(x, height)
+                                    failureAreaPath.close()
+                                }
+                            }
+                            
+                            // Draw Success Area & Line (Emerald)
+                            drawPath(
+                                path = successAreaPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(LowPriorityColor.copy(alpha = 0.15f), Color.Transparent),
+                                    startY = 0f,
+                                    endY = height
+                                )
+                            )
+                            drawPath(
+                                path = successPath,
+                                color = LowPriorityColor,
+                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            
+                            // Draw Failure Area & Line (Rose Red)
+                            drawPath(
+                                path = failureAreaPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(HighPriorityColor.copy(alpha = 0.10f), Color.Transparent),
+                                    startY = 0f,
+                                    endY = height
+                                )
+                            )
+                            drawPath(
+                                path = failurePath,
+                                color = HighPriorityColor,
+                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            
+                            // Draw Selected Index Indicator / Marker
+                            selectedIndex?.let { index ->
+                                if (index in historicalStats.indices) {
+                                    val stat = historicalStats[index]
+                                    val x = index * stepX
+                                    val successY = height * (1f - stat.successCount.toFloat() / maxVal)
+                                    val failureY = height * (1f - stat.failureCount.toFloat() / maxVal)
+                                    
+                                    // Vertical line
+                                    drawLine(
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        start = Offset(x, 0f),
+                                        end = Offset(x, height),
+                                        strokeWidth = 1.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                    )
+                                    
+                                    // Dots
+                                    drawCircle(
+                                        color = LowPriorityColor,
+                                        radius = 5.dp.toPx(),
+                                        center = Offset(x, successY)
+                                    )
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = 2.5.dp.toPx(),
+                                        center = Offset(x, successY)
+                                    )
+                                    
+                                    drawCircle(
+                                        color = HighPriorityColor,
+                                        radius = 5.dp.toPx(),
+                                        center = Offset(x, failureY)
+                                    )
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = 2.5.dp.toPx(),
+                                        center = Offset(x, failureY)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Dates Row under the Canvas
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (historicalStats.isNotEmpty()) {
+                        Text(historicalStats.first().dayLabel, style = TextStyle(color = TextSecondaryDark, fontSize = 9.sp))
+                        Text(historicalStats[historicalStats.size / 2].dayLabel, style = TextStyle(color = TextSecondaryDark, fontSize = 9.sp))
+                        Text("Today (${historicalStats.last().dayLabel})", style = TextStyle(color = TextSecondaryDark, fontSize = 9.sp, fontWeight = FontWeight.Bold))
+                    }
+                }
+            }
+            
+            // Legend and Selected Day Details
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Legend
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(LowPriorityColor))
+                        Text("Success Rate", style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(HighPriorityColor))
+                        Text("Failure Rate", style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp))
+                    }
+                }
+                
+                // Display instructions or selection stats
+                if (selectedIndex == null) {
+                    Text(
+                        text = "Tap chart to inspect daily stats",
+                        style = TextStyle(color = TextSecondaryDark.copy(alpha = 0.6f), fontSize = 10.sp, fontStyle = FontStyle.Italic)
+                    )
+                } else {
+                    val stat = historicalStats[selectedIndex!!]
+                    Text(
+                        text = "${stat.dayLabel}: ${stat.successCount} Success, ${stat.failureCount} Fail",
+                        style = TextStyle(color = TextPrimaryDark, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
 // TAB 0: AUTH0 USER PORTAL & AUDIT LOGS
 // ==========================================
 @OptIn(ExperimentalLayoutApi::class)
@@ -888,12 +1620,22 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
     val refreshToken by viewModel.refreshToken.collectAsStateWithLifecycle()
     val securityLogs by viewModel.securityLogs.collectAsStateWithLifecycle()
     val auth0Url by viewModel.auth0Url.collectAsStateWithLifecycle()
+    val auth0Scopes by viewModel.auth0Scopes.collectAsStateWithLifecycle()
 
     var showWebAuthDialog by remember { mutableStateOf(false) }
     var customDomain by remember { mutableStateOf("dabelstech.us.auth0.com") }
     var customClientId by remember { mutableStateOf("t9XzR3p8H2K9a4B7m2L1f6Z8q5Xw0D1s") }
     var selectedConnection by remember { mutableStateOf("google-oauth2") } // google-oauth2, database, github
+    var customScopes by remember { mutableStateOf(auth0Scopes) }
     var customAuth0Url by remember { mutableStateOf(auth0Url) }
+
+    LaunchedEffect(customDomain, customClientId, customScopes) {
+        viewModel.updateAuth0Config(customDomain, customClientId, customScopes)
+    }
+
+    LaunchedEffect(auth0Url) {
+        customAuth0Url = auth0Url
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -1031,6 +1773,85 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         )
 
+                        // Auth0 Requested Scopes Configuration
+                        OutlinedTextField(
+                            value = customScopes,
+                            onValueChange = { customScopes = it },
+                            label = { Text("OAuth / OIDC Scopes") },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedTextColor = TextPrimaryDark,
+                                unfocusedTextColor = TextPrimaryDark
+                            ),
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("auth0_scopes_input")
+                        )
+
+                        Text(
+                            text = "Configured Scopes Overview",
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            customScopes.split(" ").filter { it.isNotBlank() }.forEach { scopeItem ->
+                                val badgeColor = when {
+                                    scopeItem.contains("drive") -> Color(0xFF4CAF50) // Drive Green
+                                    scopeItem.contains("gmail") -> Color(0xFFEA4335) // Gmail Red
+                                    scopeItem == "openid" -> MaterialTheme.colorScheme.primary
+                                    scopeItem == "profile" -> MaterialTheme.colorScheme.secondary
+                                    scopeItem == "email" -> Color(0xFF00BCD4)
+                                    else -> Color(0xFF9C27B0)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(badgeColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .border(0.5.dp, badgeColor, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = when {
+                                                scopeItem.contains("drive") -> Icons.Default.CloudQueue
+                                                scopeItem.contains("gmail") -> Icons.Default.Email
+                                                scopeItem == "openid" -> Icons.Default.VpnKey
+                                                scopeItem == "profile" -> Icons.Default.Person
+                                                scopeItem == "email" -> Icons.Default.AlternateEmail
+                                                else -> Icons.Default.CheckCircle
+                                            },
+                                            contentDescription = null,
+                                            tint = badgeColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = when {
+                                                scopeItem.contains("drive") -> "Google Drive Read"
+                                                scopeItem.contains("gmail") -> "Gmail API Read"
+                                                else -> scopeItem
+                                            },
+                                            style = TextStyle(
+                                                color = badgeColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         val workspaceLogin by viewModel.workspaceLogin.collectAsStateWithLifecycle()
                         var customWorkspaceLogin by remember { mutableStateOf(workspaceLogin) }
 
@@ -1147,6 +1968,333 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
                                 Icon(Icons.Default.Security, contentDescription = "Secure login")
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Authenticate via Auth0 Web Connection", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Android Passkey & Google Password Manager Config
+            item {
+                var registerUsername by remember { mutableStateOf("DabelsTech Operator") }
+                var registerEmail by remember { mutableStateOf("dabelstech@moredesa.com") }
+                val isPasskeyRegistered by viewModel.isPasskeyRegistered.collectAsStateWithLifecycle()
+                val registeredPasskeyUser by viewModel.registeredPasskeyUser.collectAsStateWithLifecycle()
+                val passkeyError by viewModel.passkeyError.collectAsStateWithLifecycle()
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, ElegantBorderColor, RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Fingerprint,
+                                contentDescription = "Android Passkey",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Passkeys & Password Manager",
+                                style = TextStyle(
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            )
+                        }
+
+                        Text(
+                            text = "Register a cryptographic device passkey or credentials backed up securely to Google Password Manager.",
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                fontSize = 12.sp
+                            )
+                        )
+
+                        if (isPasskeyRegistered) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.VerifiedUser, contentDescription = "Verified", tint = LowPriorityColor)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text("PASSKEY REGISTERED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LowPriorityColor)
+                                        Text("User: $registeredPasskeyUser", fontSize = 12.sp, color = TextPrimaryDark)
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = registerUsername,
+                            onValueChange = { registerUsername = it },
+                            label = { Text("Display Name / Owner") },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedTextColor = TextPrimaryDark,
+                                unfocusedTextColor = TextPrimaryDark
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = registerEmail,
+                            onValueChange = { registerEmail = it },
+                            label = { Text("Registration Email") },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedTextColor = TextPrimaryDark,
+                                unfocusedTextColor = TextPrimaryDark
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (passkeyError != null) {
+                            Text(passkeyError ?: "", color = HighPriorityColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.registerPasskey(context, registerUsername, registerEmail) { success, msg ->
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("btn_register_passkey")
+                            ) {
+                                Icon(Icons.Default.Key, contentDescription = "Register", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Register Passkey", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.loginWithPasskey(context) { success, msg ->
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("btn_login_passkey")
+                            ) {
+                                Icon(Icons.Default.Fingerprint, contentDescription = "Login", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Passkey Login", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // JSON Webhook & Plug-in Triggers Card
+            item {
+                var jsonPayload by remember {
+                    mutableStateOf(
+                        """
+                        {
+                          "event_type": "oidc_callback_trigger",
+                          "client_id": "$customClientId",
+                          "tenant_id": "$customDomain",
+                          "claims": {
+                            "sub": "auth0|62a392b8d4f4e2006900f892",
+                            "name": "DabelsTech Admin",
+                            "email": "dabelstech@moredesa.com",
+                            "email_verified": true
+                          },
+                          "plugins": ["mfa_bypass", "geoip_allow"]
+                        }
+                        """.trimIndent()
+                    )
+                }
+
+                var mfaPluginEnabled by remember { mutableStateOf(true) }
+                var geoIpPluginEnabled by remember { mutableStateOf(true) }
+                var verifyEmailPluginEnabled by remember { mutableStateOf(false) }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, ElegantBorderColor, RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.SettingsInputComponent,
+                                contentDescription = "JSON Webhook & Plug-ins",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "JSON Webhook & Plug-in Triggers",
+                                style = TextStyle(
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            )
+                        }
+
+                        Text(
+                            text = "Simulate OAuth callback events and Auth0 extensibility plug-in actions using a raw JSON payload trigger.",
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                fontSize = 12.sp
+                            )
+                        )
+
+                        Divider(color = ElegantBorderColor.copy(alpha = 0.3f), thickness = 1.dp)
+
+                        // Extensibility Plug-ins Toggles
+                        Text(
+                            text = "Configure Auth0 Extensibility Plug-ins:",
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                Triple("MFA Bypass", mfaPluginEnabled) { mfaPluginEnabled = !mfaPluginEnabled },
+                                Triple("Geo-IP Whitelist", geoIpPluginEnabled) { geoIpPluginEnabled = !geoIpPluginEnabled },
+                                Triple("Verify Email", verifyEmailPluginEnabled) { verifyEmailPluginEnabled = !verifyEmailPluginEnabled }
+                            ).forEach { (label, checked, onToggle) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                        .border(1.dp, if (checked) MaterialTheme.colorScheme.primary else ElegantBorderColor, RoundedCornerShape(8.dp))
+                                        .clickable { onToggle() }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (checked) MaterialTheme.colorScheme.primary else TextSecondaryDark
+                                    )
+                                }
+                            }
+                        }
+
+                        // JSON Payload Editor
+                        OutlinedTextField(
+                            value = jsonPayload,
+                            onValueChange = { jsonPayload = it },
+                            label = { Text("OIDC Callback Payload (JSON)") },
+                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color(0xFF0F0F15),
+                                unfocusedContainerColor = Color(0xFF0F0F15),
+                                focusedTextColor = Color.Green,
+                                unfocusedTextColor = Color.Green
+                            ),
+                            maxLines = 10,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    try {
+                                        val obj = org.json.JSONObject(jsonPayload)
+                                        val claims = obj.optJSONObject("claims")
+                                        val email = claims?.optString("email") ?: "dabelstech@moredesa.com"
+                                        val name = claims?.optString("name") ?: "DabelsTech Operator"
+                                        
+                                        // Execute success flow
+                                        viewModel.isLoggedIn.value = true
+                                        viewModel.userEmail.value = email
+                                        viewModel.userName.value = "$name (JSON Trigger)"
+                                        
+                                        // Update active tokens
+                                        viewModel.accessToken.value = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik" + (100000..999999).random() + "..."
+                                        viewModel.idToken.value = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik" + (100000..999999).random() + "..."
+                                        
+                                        viewModel.insertSecurityLog(
+                                            eventType = "AUTH0_LOGIN",
+                                            message = "User authenticated via Extensible JSON trigger",
+                                            details = "Payload Claims: Sub=${claims?.optString("sub")}, Email=$email | Active Plugins: MFA=${mfaPluginEnabled}, GeoIP=${geoIpPluginEnabled}"
+                                        )
+                                        
+                                        android.widget.Toast.makeText(context, "OIDC Callback JSON trigger executed successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Invalid JSON structure: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = LowPriorityColor),
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("btn_trigger_json_success")
+                            ) {
+                                Icon(Icons.Default.Code, contentDescription = "Trigger Success")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Trigger Success", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    try {
+                                        val obj = org.json.JSONObject(jsonPayload)
+                                        val tenant = obj.optString("tenant_id") ?: "dabelstech.us.auth0.com"
+                                        
+                                        viewModel.isLoggedIn.value = false
+                                        viewModel.insertSecurityLog(
+                                            eventType = "AUTH0_AUTH_FAIL",
+                                            message = "OIDC Callback Failed via JSON trigger",
+                                            details = "Trigger Payload aborted. Tenant: $tenant | GeoIP Action blocked"
+                                        )
+                                        android.widget.Toast.makeText(context, "OIDC Callback JSON simulation triggered failure successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Invalid JSON structure: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = HighPriorityColor),
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("btn_trigger_json_fail")
+                            ) {
+                                Icon(Icons.Default.BugReport, contentDescription = "Trigger Failure")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Trigger Failure", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1460,36 +2608,75 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
                     }
                     
                     // Bottom Controls Bar
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFF161622))
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                viewModel.loginWithUrl(customAuth0Url)
-                                showWebAuthDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.weight(1f).height(48.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(Icons.Default.Check, contentDescription = "Accept Callback")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Simulate OIDC Callback Success", fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = {
+                                    viewModel.loginWithUrl(customAuth0Url)
+                                    showWebAuthDialog = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = LowPriorityColor),
+                                modifier = Modifier.weight(1f).height(48.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = "Accept Callback")
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("OIDC Success", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            
+                            Button(
+                                onClick = {
+                                    viewModel.loginWithUrlFailed(customAuth0Url, "OIDC authentication aborted - access_denied (client profile failed IP validation)")
+                                    showWebAuthDialog = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = HighPriorityColor),
+                                modifier = Modifier.weight(1f).height(48.dp)
+                            ) {
+                                Icon(Icons.Default.ErrorOutline, contentDescription = "Fail Callback")
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("OIDC Failure", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
                         }
                         
-                        Spacer(modifier = Modifier.width(12.dp))
-                        
-                        OutlinedButton(
-                            onClick = { showWebAuthDialog = false },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimaryDark),
-                            border = BorderStroke(1.dp, ElegantBorderColor),
-                            modifier = Modifier.height(48.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Cancel", fontWeight = FontWeight.SemiBold)
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(customAuth0Url))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Error opening browser: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Icon(Icons.Default.OpenInBrowser, contentDescription = "System Browser", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Open System Browser", fontSize = 11.sp)
+                            }
+                            
+                            OutlinedButton(
+                                onClick = { showWebAuthDialog = false },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimaryDark),
+                                border = BorderStroke(1.dp, ElegantBorderColor),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -1764,6 +2951,7 @@ fun ApiClientTabScreen(viewModel: TaskViewModel) {
                                 listOf(
                                     "https://api.dabelstech.com/v1/automation/status",
                                     "https://api.dabelstech.com/v1/automation/jobs",
+                                    "https://api.dabelstech.com/v1/automation/jobs/logs",
                                     "https://api.dabelstech.com/v1/automation/email-logs"
                                 ).forEach { endpoint ->
                                     DropdownMenuItem(
@@ -1956,7 +3144,9 @@ fun ApiClientTabScreen(viewModel: TaskViewModel) {
 @Composable
 fun EmailAutomationTabScreen(viewModel: TaskViewModel) {
     val emailCampaigns by viewModel.emailCampaigns.collectAsStateWithLifecycle()
+    val emailTemplates by viewModel.emailTemplates.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
+    var subTab by remember { mutableStateOf(0) } // 0: Campaigns, 1: Failure Templates
 
     // Forms state
     var formTemplateName by remember { mutableStateOf("") }
@@ -1964,10 +3154,26 @@ fun EmailAutomationTabScreen(viewModel: TaskViewModel) {
     var formBody by remember { mutableStateOf("") }
     var formRecipientGroup by remember { mutableStateOf("Active Users") }
 
+    var showAddTemplateDialog by remember { mutableStateOf(false) }
+    var editingTemplate by remember { mutableStateOf<com.example.data.EmailTemplate?>(null) }
+    var templateFormName by remember { mutableStateOf("") }
+    var templateFormSubject by remember { mutableStateOf("") }
+    var templateFormBody by remember { mutableStateOf("") }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = { 
+                    if (subTab == 0) {
+                        showAddDialog = true 
+                    } else {
+                        editingTemplate = null
+                        templateFormName = ""
+                        templateFormSubject = ""
+                        templateFormBody = "Hello DevOps Team,\n\nThe E2E automated worker has reported a failure in execution.\n\n- Job Name: {{job_name}}\n- Target URL: {{target_url}}\n- Failure Time: {{failure_time}}\n\nRecent Exception Logs:\n{{log_snippet}}\n\nPlease review the dashboard logs immediately.\n\nBest,\nDabelsTech"
+                        showAddTemplateDialog = true
+                    }
+                },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = RoundedCornerShape(16.dp),
@@ -1975,7 +3181,7 @@ fun EmailAutomationTabScreen(viewModel: TaskViewModel) {
                     .testTag("btn_add_email_campaign")
                     .padding(bottom = 16.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Campaign")
+                Icon(Icons.Default.Add, contentDescription = "Add Item")
             }
         },
         containerColor = Color.Transparent
@@ -2018,42 +3224,129 @@ fun EmailAutomationTabScreen(viewModel: TaskViewModel) {
                 }
             }
 
-            // Campaigns Header
+            // Sub-tab switcher
             item {
-                Text(
-                    text = "ACTIVE AUTOMATED CAMPAIGNS",
-                    style = TextStyle(
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.5.sp
-                    ),
-                    modifier = Modifier.padding(start = 4.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { subTab = 0 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (subTab == 0) MaterialTheme.colorScheme.primary else CardBg,
+                            contentColor = if (subTab == 0) MaterialTheme.colorScheme.onPrimary else TextPrimaryDark
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).testTag("subtab_campaigns")
+                    ) {
+                        Icon(Icons.Default.Campaign, contentDescription = "Campaigns")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Campaigns", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = { subTab = 1 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (subTab == 1) MaterialTheme.colorScheme.primary else CardBg,
+                            contentColor = if (subTab == 1) MaterialTheme.colorScheme.onPrimary else TextPrimaryDark
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).testTag("subtab_templates")
+                    ) {
+                        Icon(Icons.Default.MailOutline, contentDescription = "Failure Templates")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Failure Templates", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
 
-            // Campaigns List
-            if (emailCampaigns.isEmpty()) {
+            if (subTab == 0) {
+                // Campaigns Header
                 item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No campaigns designed. Tap + to configure.",
-                            style = TextStyle(color = TextSecondaryDark, fontSize = 13.sp)
+                    Text(
+                        text = "ACTIVE AUTOMATED CAMPAIGNS",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.5.sp
+                        ),
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+
+                // Campaigns List
+                if (emailCampaigns.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No campaigns designed. Tap + to configure.",
+                                style = TextStyle(color = TextSecondaryDark, fontSize = 13.sp)
+                            )
+                        }
+                    }
+                } else {
+                    items(emailCampaigns) { campaign ->
+                        EmailCampaignItem(
+                            campaign = campaign,
+                            onRun = { viewModel.runEmailCampaign(campaign) },
+                            onDelete = { viewModel.deleteCampaign(campaign) }
                         )
                     }
                 }
             } else {
-                items(emailCampaigns) { campaign ->
-                    EmailCampaignItem(
-                        campaign = campaign,
-                        onRun = { viewModel.runEmailCampaign(campaign) },
-                        onDelete = { viewModel.deleteCampaign(campaign) }
+                // Templates Header
+                item {
+                    Text(
+                        text = "FAILURE ALERTS EMAIL TEMPLATES",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.5.sp
+                        ),
+                        modifier = Modifier.padding(start = 4.dp)
                     )
+                }
+
+                // Templates List
+                if (emailTemplates.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No failure templates found. Tap + to configure custom templates.",
+                                style = TextStyle(color = TextSecondaryDark, fontSize = 13.sp)
+                            )
+                        }
+                    }
+                } else {
+                    items(emailTemplates) { template ->
+                        EmailTemplateItem(
+                            template = template,
+                            onEdit = {
+                                editingTemplate = template
+                                templateFormName = template.name
+                                templateFormSubject = template.subject
+                                templateFormBody = template.body
+                                showAddTemplateDialog = true
+                            },
+                            onDelete = {
+                                viewModel.deleteEmailTemplate(template)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -2178,6 +3471,277 @@ fun EmailAutomationTabScreen(viewModel: TaskViewModel) {
             },
             containerColor = CardBg
         )
+    }
+
+    if (showAddTemplateDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddTemplateDialog = false },
+            title = {
+                Text(
+                    if (editingTemplate == null) "Design Failure Email Template" else "Edit Failure Email Template",
+                    style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = templateFormName,
+                        onValueChange = { templateFormName = it },
+                        label = { Text("Template Name") },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = TextPrimaryDark,
+                            unfocusedTextColor = TextPrimaryDark
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("tf_template_name")
+                    )
+
+                    OutlinedTextField(
+                        value = templateFormSubject,
+                        onValueChange = { templateFormSubject = it },
+                        label = { Text("Subject Line (e.g. ⚠️ CRITICAL: {{job_name}})") },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = TextPrimaryDark,
+                            unfocusedTextColor = TextPrimaryDark
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("tf_template_subject")
+                    )
+
+                    OutlinedTextField(
+                        value = templateFormBody,
+                        onValueChange = { templateFormBody = it },
+                        label = { Text("Email Body Template") },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = TextPrimaryDark,
+                            unfocusedTextColor = TextPrimaryDark
+                        ),
+                        maxLines = 10,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp).testTag("tf_template_body")
+                    )
+
+                    // Helper Variable Chips
+                    Text(
+                        text = "Tap to insert tokens:",
+                        style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val tokens = listOf("{{job_name}}", "{{target_url}}", "{{failure_time}}", "{{log_snippet}}")
+                        tokens.forEach { token ->
+                            AssistChip(
+                                onClick = { templateFormBody += " $token" },
+                                label = { Text(token, fontSize = 10.sp) },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (templateFormName.isNotBlank() && templateFormSubject.isNotBlank() && templateFormBody.isNotBlank()) {
+                            val currentEdit = editingTemplate
+                            if (currentEdit == null) {
+                                viewModel.createEmailTemplate(
+                                    templateFormName,
+                                    templateFormSubject,
+                                    templateFormBody
+                                )
+                            } else {
+                                viewModel.updateEmailTemplate(
+                                    currentEdit.copy(
+                                        name = templateFormName,
+                                        subject = templateFormSubject,
+                                        body = templateFormBody
+                                    )
+                                )
+                            }
+                            showAddTemplateDialog = false
+                            // Reset
+                            templateFormName = ""
+                            templateFormSubject = ""
+                            templateFormBody = ""
+                            editingTemplate = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(if (editingTemplate == null) "Create Template" else "Save Changes", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddTemplateDialog = false }) {
+                    Text("Cancel", color = TextSecondaryDark)
+                }
+            },
+            containerColor = CardBg
+        )
+    }
+}
+
+@Composable
+fun EmailTemplateItem(
+    template: com.example.data.EmailTemplate,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("template_item_${template.id}"),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, ElegantBorderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = template.name,
+                            style = TextStyle(
+                                color = TextPrimaryDark,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (template.isSystem) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                    else Color(0xFF10B981).copy(alpha = 0.2f)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (template.isSystem) "SYSTEM DEFAULT" else "CUSTOM",
+                                style = TextStyle(
+                                    color = if (template.isSystem) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Subject: ${template.subject}",
+                        style = TextStyle(
+                            color = TextSecondaryDark,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(36.dp).testTag("btn_edit_template_${template.id}")
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Edit Template",
+                            tint = TextSecondaryDark,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    if (!template.isSystem) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(36.dp).testTag("btn_delete_template_${template.id}")
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete Template",
+                                tint = HighPriorityColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = ElegantBorderColor, thickness = 1.dp)
+
+            // Body preview
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF131215))
+                    .padding(12.dp)
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = template.body,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = TextSecondaryDark
+                        ),
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Available tokens indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "Tokens",
+                    tint = TextSecondaryDark.copy(alpha = 0.6f),
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(
+                    text = "Supports tokens: {{job_name}}, {{target_url}}, {{failure_time}}, {{log_snippet}}",
+                    style = TextStyle(
+                        color = TextSecondaryDark.copy(alpha = 0.6f),
+                        fontSize = 10.sp
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -2355,6 +3919,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
     val playwrightJobs by viewModel.playwrightJobs.collectAsStateWithLifecycle()
     val runningJobId by viewModel.runningJobId.collectAsStateWithLifecycle()
     val activeJobLogs by viewModel.activeJobLogs.collectAsStateWithLifecycle()
+    val emailTemplates by viewModel.emailTemplates.collectAsStateWithLifecycle()
 
     var showAddJobDialog by remember { mutableStateOf(false) }
 
@@ -2364,6 +3929,13 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
     var formScriptType by remember { mutableStateOf("E2E Login Flow") }
     var formCronSchedule by remember { mutableStateOf("Manual") }
     var formIsHighPriority by remember { mutableStateOf(false) }
+    var formFailureEmailTemplateId by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(emailTemplates) {
+        if (formFailureEmailTemplateId == null && emailTemplates.isNotEmpty()) {
+            formFailureEmailTemplateId = emailTemplates.firstOrNull()?.id
+        }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -2473,6 +4045,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                     PlaywrightJobItem(
                         job = job,
                         isGlobalRunnerBusy = runningJobId != null,
+                        emailTemplates = emailTemplates,
                         onRun = { viewModel.runPlaywrightJob(job) },
                         onRunFail = { viewModel.runPlaywrightJob(job, forceFail = true) },
                         onDelete = { viewModel.deletePlaywrightJob(job) }
@@ -2598,6 +4171,85 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                             )
                         )
                     }
+
+                    if (formIsHighPriority) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Failure Alert Email Template",
+                            style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        )
+                        
+                        var dropdownExpanded by remember { mutableStateOf(false) }
+                        val selectedTemplate = emailTemplates.find { it.id == formFailureEmailTemplateId }
+                        val templateLabel = selectedTemplate?.name ?: "No template selected"
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.03f))
+                                .border(1.dp, ElegantBorderColor, RoundedCornerShape(12.dp))
+                                .clickable { dropdownExpanded = true }
+                                .padding(horizontal = 12.dp, vertical = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.MailOutline,
+                                        contentDescription = "Template",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = templateLabel,
+                                        style = TextStyle(color = TextPrimaryDark, fontSize = 13.sp)
+                                    )
+                                }
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Expand",
+                                    tint = TextSecondaryDark
+                                )
+                            }
+                            
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false },
+                                modifier = Modifier
+                                    .fillMaxWidth(0.8f)
+                                    .background(CardBg)
+                                    .border(1.dp, ElegantBorderColor, RoundedCornerShape(8.dp))
+                            ) {
+                                if (emailTemplates.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("No templates found", color = TextSecondaryDark) },
+                                        onClick = { dropdownExpanded = false }
+                                    )
+                                } else {
+                                    emailTemplates.forEach { template ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(template.name, color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text(template.subject, color = TextSecondaryDark, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                }
+                                            },
+                                            onClick = {
+                                                formFailureEmailTemplateId = template.id
+                                                dropdownExpanded = false
+                                            },
+                                            modifier = Modifier.testTag("dropdown_item_template_${template.id}")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -2609,7 +4261,8 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                                 formTargetUrl,
                                 formScriptType,
                                 formCronSchedule,
-                                formIsHighPriority
+                                formIsHighPriority,
+                                formFailureEmailTemplateId
                             )
                             showAddJobDialog = false
                             // Reset
@@ -2618,6 +4271,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                             formScriptType = "E2E Login Flow"
                             formCronSchedule = "Manual"
                             formIsHighPriority = false
+                            formFailureEmailTemplateId = emailTemplates.firstOrNull()?.id
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -2639,6 +4293,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
 fun PlaywrightJobItem(
     job: PlaywrightJob,
     isGlobalRunnerBusy: Boolean,
+    emailTemplates: List<com.example.data.EmailTemplate> = emptyList(),
     onRun: () -> Unit,
     onRunFail: () -> Unit,
     onDelete: () -> Unit
@@ -2779,6 +4434,37 @@ fun PlaywrightJobItem(
                         Text("Duration", style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp))
                         Text("${job.durationMs}ms", style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Medium, fontSize = 12.sp))
                     }
+                }
+            }
+
+            if (job.isHighPriority) {
+                Spacer(modifier = Modifier.height(10.dp))
+                val matchedTemplate = emailTemplates.find { it.id == job.failureEmailTemplateId }
+                val templateName = matchedTemplate?.name ?: "Standard Fail Notice (Default)"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.02f))
+                        .border(1.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MailOutline,
+                        contentDescription = "Notification Template",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Alert Template: ",
+                        style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        text = templateName,
+                        style = TextStyle(color = TextPrimaryDark, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    )
                 }
             }
 
