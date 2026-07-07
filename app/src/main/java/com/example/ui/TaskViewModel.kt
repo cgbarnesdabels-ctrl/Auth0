@@ -123,6 +123,7 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
 
     // --- Auth0 Authentication Context Provider ---
     val authProvider = com.example.data.Auth0AuthProvider()
+    private val emailService = com.example.data.EmailService(authProvider)
 
     // --- Passkey / Google Password Manager State ---
     val isPasskeyRegistered = MutableStateFlow(false)
@@ -425,6 +426,11 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                                 details = "OIDC token refresh successfully initialized. Scopes: ${auth0Scopes.value}"
                             )
                         )
+                        // Trigger automated welcome email via the new service module
+                        emailService.sendWelcomeEmail(
+                            userEmail = userEmail.value,
+                            userName = userName.value
+                        )
                     }
                 },
                 onFailure = { error ->
@@ -474,6 +480,12 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                     message = "User john.dabels@dabelstech.com authenticated via Web OIDC Callback",
                     details = "Auth0 OIDC Url: $url\nAuthorized Scopes: ${auth0Scopes.value}"
                 )
+            )
+
+            // Trigger automated welcome email via the new service module
+            emailService.sendWelcomeEmail(
+                userEmail = userEmail.value,
+                userName = userName.value
             )
         }
     }
@@ -651,6 +663,13 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                     )
                 )
                 isLoggingIn.value = false
+                
+                // Trigger automated welcome email via the new service module
+                emailService.sendWelcomeEmail(
+                    userEmail = userEmail.value,
+                    userName = userName.value
+                )
+                
                 onComplete(true, "Authenticated successfully via Android Passkey!")
             } catch (e: Exception) {
                 val errorMsg = e.localizedMessage ?: e.message ?: "Unknown authentication exception"
@@ -684,16 +703,45 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         }
     }
 
-    fun logout() {
+    fun logout(context: android.content.Context) {
         viewModelScope.launch {
             repository.insertLog(
                 SecurityLog(
-                    eventType = "AUTH0_LOGOUT",
-                    message = "User ${userEmail.value} logged out",
-                    details = "Auth0 session terminated locally and clean cache cleared."
+                    eventType = "AUTH0_LOGOUT_ATTEMPT",
+                    message = "Initiating Auth0 WebAuthProvider SDK OIDC Logout",
+                    details = "Clearing browser cookies and local OIDC session states."
                 )
             )
-            authProvider.clearSessionState()
+
+            authProvider.logoutWithAuth0SDK(
+                context = context,
+                domain = auth0Domain.value,
+                clientId = auth0ClientId.value,
+                scheme = "com.dabelstech.authapp",
+                onCompleted = {
+                    viewModelScope.launch {
+                        repository.insertLog(
+                            SecurityLog(
+                                eventType = "AUTH0_LOGOUT",
+                                message = "User successfully logged out via SDK",
+                                details = "Auth0 session terminated and cache cleared."
+                            )
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    viewModelScope.launch {
+                        repository.insertLog(
+                            SecurityLog(
+                                eventType = "AUTH0_LOGOUT_FAIL",
+                                message = "Auth0 SDK Logout failed: ${error.message}",
+                                details = "Falling back to local state clearance."
+                            )
+                        )
+                        authProvider.clearSessionState()
+                    }
+                }
+            )
         }
     }
 

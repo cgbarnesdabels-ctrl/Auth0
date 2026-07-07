@@ -1947,7 +1947,12 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
 
                         Button(
                             onClick = {
-                                showWebAuthDialog = true
+                                viewModel.login(
+                                    context = context,
+                                    domain = customWorkspaceLogin,
+                                    clientId = "t9XzR3p8H2K9a4B7m2L1f6Z8q5Xw0D1s", // Template ClientID
+                                    connection = selectedConnection
+                                )
                             },
                             enabled = !isLoggingIn,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -2339,7 +2344,7 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
                                 )
                             }
                             TextButton(
-                                onClick = { viewModel.logout() },
+                                onClick = { viewModel.logout(context) },
                                 modifier = Modifier.testTag("btn_auth0_logout")
                             ) {
                                 Icon(Icons.Default.Logout, contentDescription = "Log out")
