@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.text.selection.SelectionContainer
 import com.example.data.EmailCampaign
 import com.example.data.PlaywrightJob
 import com.example.data.SecurityLog
@@ -55,7 +56,7 @@ import java.util.*
 @Composable
 fun TaskCalendarApp(viewModel: TaskViewModel) {
     val context = LocalContext.current
-    var currentTab by remember { mutableStateOf(0) } // 0: Auth0, 1: API Client, 2: Email Automation, 3: Playwright Runner
+    var currentTab by remember { mutableStateOf(0) } // 0: Dashboard, 1: Auth0, 2: API Client, 3: Emails, 4: Playwright
 
     val isLoggedIn by viewModel.isLoggedIn.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
@@ -158,7 +159,26 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
                     onClick = { currentTab = 0 },
                     icon = {
                         Icon(
-                            imageVector = if (currentTab == 0) Icons.Default.VpnKey else Icons.Outlined.VpnKey,
+                            imageVector = if (currentTab == 0) Icons.Default.Dashboard else Icons.Outlined.Dashboard,
+                            contentDescription = "Dashboard Hub"
+                        )
+                    },
+                    label = { Text("Dashboard") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        unselectedIconColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        indicatorColor = MaterialTheme.colorScheme.surface
+                    ),
+                    modifier = Modifier.testTag("nav_dashboard")
+                )
+                NavigationBarItem(
+                    selected = currentTab == 1,
+                    onClick = { currentTab = 1 },
+                    icon = {
+                        Icon(
+                            imageVector = if (currentTab == 1) Icons.Default.VpnKey else Icons.Outlined.VpnKey,
                             contentDescription = "Auth0 Portal"
                         )
                     },
@@ -173,11 +193,11 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
                     modifier = Modifier.testTag("nav_auth0")
                 )
                 NavigationBarItem(
-                    selected = currentTab == 1,
-                    onClick = { currentTab = 1 },
+                    selected = currentTab == 2,
+                    onClick = { currentTab = 2 },
                     icon = {
                         Icon(
-                            imageVector = if (currentTab == 1) Icons.Default.Http else Icons.Outlined.Http,
+                            imageVector = if (currentTab == 2) Icons.Default.Http else Icons.Outlined.Http,
                             contentDescription = "API Client"
                         )
                     },
@@ -192,11 +212,11 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
                     modifier = Modifier.testTag("nav_api")
                 )
                 NavigationBarItem(
-                    selected = currentTab == 2,
-                    onClick = { currentTab = 2 },
+                    selected = currentTab == 3,
+                    onClick = { currentTab = 3 },
                     icon = {
                         Icon(
-                            imageVector = if (currentTab == 2) Icons.Default.Mail else Icons.Outlined.Mail,
+                            imageVector = if (currentTab == 3) Icons.Default.Mail else Icons.Outlined.Mail,
                             contentDescription = "Email Automation"
                         )
                     },
@@ -211,11 +231,11 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
                     modifier = Modifier.testTag("nav_emails")
                 )
                 NavigationBarItem(
-                    selected = currentTab == 3,
-                    onClick = { currentTab = 3 },
+                    selected = currentTab == 4,
+                    onClick = { currentTab = 4 },
                     icon = {
                         Icon(
-                            imageVector = if (currentTab == 3) Icons.Default.Terminal else Icons.Outlined.Terminal,
+                            imageVector = if (currentTab == 4) Icons.Default.Terminal else Icons.Outlined.Terminal,
                             contentDescription = "Playwright Jobs"
                         )
                     },
@@ -250,13 +270,603 @@ fun TaskCalendarApp(viewModel: TaskViewModel) {
                 label = "tab_animation"
             ) { tabIndex ->
                 when (tabIndex) {
-                    0 -> Auth0TabScreen(viewModel = viewModel)
-                    1 -> ApiClientTabScreen(viewModel = viewModel)
-                    2 -> EmailAutomationTabScreen(viewModel = viewModel)
-                    3 -> PlaywrightTabScreen(viewModel = viewModel)
+                    0 -> DashboardTabScreen(viewModel = viewModel)
+                    1 -> Auth0TabScreen(viewModel = viewModel)
+                    2 -> ApiClientTabScreen(viewModel = viewModel)
+                    3 -> EmailAutomationTabScreen(viewModel = viewModel)
+                    4 -> PlaywrightTabScreen(viewModel = viewModel)
                 }
             }
         }
+    }
+}
+
+// ==========================================
+// TAB: OPERATIONS DASHBOARD (LANDING PAGE)
+// ==========================================
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DashboardTabScreen(viewModel: TaskViewModel) {
+    val context = LocalContext.current
+    
+    val isEmailConnected by viewModel.isEmailConnected.collectAsStateWithLifecycle()
+    val connectedEmailAddress by viewModel.connectedEmailAddress.collectAsStateWithLifecycle()
+    val isConnectingEmail by viewModel.isConnectingEmail.collectAsStateWithLifecycle()
+    val syncedEmails by viewModel.syncedEmails.collectAsStateWithLifecycle()
+
+    val isGoogleDriveConnected by viewModel.isGoogleDriveConnected.collectAsStateWithLifecycle()
+    val driveUserEmail by viewModel.driveUserEmail.collectAsStateWithLifecycle()
+    val isConnectingDrive by viewModel.isConnectingDrive.collectAsStateWithLifecycle()
+    val driveFiles by viewModel.driveFiles.collectAsStateWithLifecycle()
+
+    val playwrightSummary by viewModel.playwrightSummary.collectAsStateWithLifecycle()
+    val isGeneratingSummary by viewModel.isGeneratingSummary.collectAsStateWithLifecycle()
+    val playwrightJobs by viewModel.playwrightJobs.collectAsStateWithLifecycle()
+
+    var showEmailConnectDialog by remember { mutableStateOf(false) }
+    var showDriveConnectDialog by remember { mutableStateOf(false) }
+    var emailInput by remember { mutableStateOf("dabelstech@moredesa.com") }
+    var driveEmailInput by remember { mutableStateOf("dabelstech@moredesa.com") }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp)
+    ) {
+        // Welcome Header
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        text = "WELCOME BACK,",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.5.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "DabelsTech Operations Hub",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp,
+                            letterSpacing = (-0.5).sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Integrate tools, configure Universal Auth0 endpoints, and leverage Gemini AI to summarize and prioritize E2E workloads.",
+                        style = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    )
+                }
+            }
+        }
+
+        // CONNECTED APPLICATIONS Section
+        item {
+            Text(
+                text = "WORKPLACE INTEGRATIONS HUB",
+                style = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                ),
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Email Connector Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(
+                            1.dp,
+                            if (isEmailConnected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f) else ElegantBorderColor,
+                            RoundedCornerShape(20.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isEmailConnected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mail,
+                                    contentDescription = "Email Connect",
+                                    tint = if (isEmailConnected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Emails App",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            )
+                        }
+
+                        if (isEmailConnected) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Connected",
+                                    style = TextStyle(color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                )
+                                Text(
+                                    text = connectedEmailAddress,
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${syncedEmails.size} recent messages synced",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp)
+                                )
+                            }
+                            Button(
+                                onClick = { viewModel.disconnectEmails() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(32.dp)
+                            ) {
+                                Text("Disconnect", style = TextStyle(color = MaterialTheme.colorScheme.error, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Disconnected",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp)
+                                )
+                                Text(
+                                    text = "Connect SMTP/IMAP workspace email",
+                                    style = TextStyle(color = TextSecondaryDark.copy(alpha = 0.6f), fontSize = 10.sp),
+                                    lineHeight = 14.sp
+                                )
+                            }
+                            Button(
+                                onClick = { showEmailConnectDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(32.dp)
+                            ) {
+                                Text("Connect App", style = TextStyle(color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    }
+                }
+
+                // Google Drive Connector Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(
+                            1.dp,
+                            if (isGoogleDriveConnected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f) else ElegantBorderColor,
+                            RoundedCornerShape(20.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isGoogleDriveConnected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudQueue,
+                                    contentDescription = "Drive Connect",
+                                    tint = if (isGoogleDriveConnected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Google Drive",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            )
+                        }
+
+                        if (isGoogleDriveConnected) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Connected",
+                                    style = TextStyle(color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                )
+                                Text(
+                                    text = driveUserEmail,
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${driveFiles.size} drive files synced",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp)
+                                )
+                            }
+                            Button(
+                                onClick = { viewModel.disconnectGoogleDrive() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(32.dp)
+                            ) {
+                                Text("Disconnect", style = TextStyle(color = MaterialTheme.colorScheme.error, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Disconnected",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp)
+                                )
+                                Text(
+                                    text = "Sync Google Drive folder structures",
+                                    style = TextStyle(color = TextSecondaryDark.copy(alpha = 0.6f), fontSize = 10.sp),
+                                    lineHeight = 14.sp
+                                )
+                            }
+                            Button(
+                                onClick = { showDriveConnectDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(32.dp)
+                            ) {
+                                Text("Connect Drive", style = TextStyle(color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Expanded integrations data views
+        if (isEmailConnected || isGoogleDriveConnected) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, ElegantBorderColor, RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "LIVE SYNCHRONIZATION DATA",
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.5.sp
+                            )
+                        )
+
+                        if (isEmailConnected) {
+                            Text(
+                                text = "Recent Emails (IMAP Workspace)",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            )
+                            syncedEmails.forEach { msg ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (msg.isRead) Icons.Default.Drafts else Icons.Default.Mail,
+                                        contentDescription = null,
+                                        tint = if (msg.isRead) TextSecondaryDark else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = msg.sender, style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 11.sp))
+                                        Text(text = msg.subject, style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    Text(text = msg.date, style = TextStyle(color = TextSecondaryDark, fontSize = 9.sp))
+                                }
+                            }
+                        }
+
+                        if (isGoogleDriveConnected) {
+                            if (isEmailConnected) {
+                                Divider(color = ElegantBorderColor.copy(alpha = 0.5f), thickness = 1.dp)
+                            }
+                            Text(
+                                text = "Recent Drive Files (OAuth Cloud)",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            )
+                            driveFiles.forEach { file ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = when (file.mimeType) {
+                                            "Document" -> Icons.Default.Description
+                                            "Spreadsheet" -> Icons.Default.TableChart
+                                            "PDF" -> Icons.Default.PictureAsPdf
+                                            else -> Icons.Default.FolderOpen
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = file.name, style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 11.sp))
+                                        Text(text = "${file.mimeType} • ${file.size}", style = TextStyle(color = TextSecondaryDark, fontSize = 10.sp))
+                                    }
+                                    Text(text = file.lastModified, style = TextStyle(color = TextSecondaryDark, fontSize = 9.sp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // GEMINI AI INTEGRATION Section
+        item {
+            Text(
+                text = "GEMINI AI AUTOMATION INTELLIGENCE",
+                style = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                ),
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+            )
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "Gemini Spark",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Playwright E2E Workload Analyst",
+                                    style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                )
+                                Text(
+                                    text = "Powered by Gemini 3.5 Flash",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp)
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.generatePlaywrightSummaryWithGemini() },
+                            enabled = !isGeneratingSummary && playwrightJobs.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            if (isGeneratingSummary) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.QueryStats, contentDescription = "Run analysis", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Analyze", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    if (playwrightSummary.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(16.dp))
+                                .border(1.dp, ElegantBorderColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                                .padding(14.dp)
+                        ) {
+                            SelectionContainer {
+                                Text(
+                                    text = playwrightSummary,
+                                    style = TextStyle(
+                                        color = TextPrimaryDark,
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp,
+                                        fontFamily = FontFamily.SansSerif
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.01f), RoundedCornerShape(16.dp))
+                                .border(1.dp, ElegantBorderColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Analytics, contentDescription = null, tint = TextSecondaryDark.copy(alpha = 0.4f), modifier = Modifier.size(32.dp))
+                                Text(
+                                    text = if (playwrightJobs.isEmpty()) "No active Playwright jobs configured." else "Click 'Analyze' to run Gemini priority analysis.",
+                                    style = TextStyle(color = TextSecondaryDark, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Connect Email Dialog
+    if (showEmailConnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmailConnectDialog = false },
+            title = { Text("Connect Workplace Email", style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Provide your enterprise email to grant the DabelsTech platform automated SMTP/IMAP credentials.", style = TextStyle(color = TextSecondaryDark, fontSize = 13.sp))
+                    OutlinedTextField(
+                        value = emailInput,
+                        onValueChange = { emailInput = it },
+                        label = { Text("Email Address") },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = TextPrimaryDark,
+                            unfocusedTextColor = TextPrimaryDark
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.connectEmails(emailInput)
+                        showEmailConnectDialog = false
+                    }
+                ) {
+                    Text("Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmailConnectDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Connect Drive Dialog
+    if (showDriveConnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showDriveConnectDialog = false },
+            title = { Text("Sync Google Drive Workspace", style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Grant secure Google Drive API read-access to pull template logs and schema specifications automatically.", style = TextStyle(color = TextSecondaryDark, fontSize = 13.sp))
+                    OutlinedTextField(
+                        value = driveEmailInput,
+                        onValueChange = { driveEmailInput = it },
+                        label = { Text("Google Account Email") },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = TextPrimaryDark,
+                            unfocusedTextColor = TextPrimaryDark
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.connectGoogleDrive(driveEmailInput)
+                        showDriveConnectDialog = false
+                    }
+                ) {
+                    Text("Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDriveConnectDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -419,6 +1029,26 @@ fun Auth0TabScreen(viewModel: TaskViewModel) {
                             ),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
+                        )
+
+                        val workspaceLogin by viewModel.workspaceLogin.collectAsStateWithLifecycle()
+                        var customWorkspaceLogin by remember { mutableStateOf(workspaceLogin) }
+
+                        OutlinedTextField(
+                            value = customWorkspaceLogin,
+                            onValueChange = { 
+                                customWorkspaceLogin = it
+                                viewModel.workspaceLogin.value = it
+                            },
+                            label = { Text("Workspace Organization / Tenant ID") },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedTextColor = TextPrimaryDark,
+                                unfocusedTextColor = TextPrimaryDark
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("auth0_workspace_input")
                         )
 
                         // Connections Row
@@ -1733,6 +2363,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
     var formTargetUrl by remember { mutableStateOf("https://") }
     var formScriptType by remember { mutableStateOf("E2E Login Flow") }
     var formCronSchedule by remember { mutableStateOf("Manual") }
+    var formIsHighPriority by remember { mutableStateOf(false) }
 
     Scaffold(
         floatingActionButton = {
@@ -1843,6 +2474,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                         job = job,
                         isGlobalRunnerBusy = runningJobId != null,
                         onRun = { viewModel.runPlaywrightJob(job) },
+                        onRunFail = { viewModel.runPlaywrightJob(job, forceFail = true) },
                         onDelete = { viewModel.deletePlaywrightJob(job) }
                     )
                 }
@@ -1936,6 +2568,36 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.03f))
+                            .clickable { formIsHighPriority = !formIsHighPriority }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "High Priority Monitoring",
+                                style = TextStyle(color = TextPrimaryDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            )
+                            Text(
+                                "Triggers instant background email alert upon failure.",
+                                style = TextStyle(color = TextSecondaryDark, fontSize = 11.sp)
+                            )
+                        }
+                        Switch(
+                            checked = formIsHighPriority,
+                            onCheckedChange = { formIsHighPriority = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                            )
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -1946,7 +2608,8 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                                 formJobName,
                                 formTargetUrl,
                                 formScriptType,
-                                formCronSchedule
+                                formCronSchedule,
+                                formIsHighPriority
                             )
                             showAddJobDialog = false
                             // Reset
@@ -1954,6 +2617,7 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
                             formTargetUrl = "https://"
                             formScriptType = "E2E Login Flow"
                             formCronSchedule = "Manual"
+                            formIsHighPriority = false
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -1972,7 +2636,13 @@ fun PlaywrightTabScreen(viewModel: TaskViewModel) {
 }
 
 @Composable
-fun PlaywrightJobItem(job: PlaywrightJob, isGlobalRunnerBusy: Boolean, onRun: () -> Unit, onDelete: () -> Unit) {
+fun PlaywrightJobItem(
+    job: PlaywrightJob,
+    isGlobalRunnerBusy: Boolean,
+    onRun: () -> Unit,
+    onRunFail: () -> Unit,
+    onDelete: () -> Unit
+) {
     val isRunningThisJob = job.status == "Running"
 
     Card(
@@ -2032,40 +2702,62 @@ fun PlaywrightJobItem(job: PlaywrightJob, isGlobalRunnerBusy: Boolean, onRun: ()
                     }
                 }
 
-                // Status Badge
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(
-                            when (job.status) {
-                                "Running" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                "Failed" -> HighPriorityColor.copy(alpha = 0.15f)
-                                else -> LowPriorityColor.copy(alpha = 0.15f)
-                            }
+                // Status & Priority Badges
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (job.isHighPriority) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(HighPriorityColor.copy(alpha = 0.15f))
+                                .border(0.5.dp, HighPriorityColor, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "HIGH PRIORITY",
+                                style = TextStyle(
+                                    color = HighPriorityColor,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                when (job.status) {
+                                    "Running" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    "Failed" -> HighPriorityColor.copy(alpha = 0.15f)
+                                    else -> LowPriorityColor.copy(alpha = 0.15f)
+                                }
+                            )
+                            .border(
+                                0.5.dp,
+                                when (job.status) {
+                                    "Running" -> MaterialTheme.colorScheme.primary
+                                    "Failed" -> HighPriorityColor
+                                    else -> LowPriorityColor
+                                },
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = job.status,
+                            style = TextStyle(
+                                color = when (job.status) {
+                                    "Running" -> MaterialTheme.colorScheme.primary
+                                    "Failed" -> HighPriorityColor
+                                    else -> LowPriorityColor
+                                },
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         )
-                        .border(
-                            0.5.dp,
-                            when (job.status) {
-                                "Running" -> MaterialTheme.colorScheme.primary
-                                "Failed" -> HighPriorityColor
-                                else -> LowPriorityColor
-                            },
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = job.status,
-                        style = TextStyle(
-                            color = when (job.status) {
-                                "Running" -> MaterialTheme.colorScheme.primary
-                                "Failed" -> HighPriorityColor
-                                else -> LowPriorityColor
-                            },
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
+                    }
                 }
             }
 
@@ -2103,13 +2795,28 @@ fun PlaywrightJobItem(job: PlaywrightJob, isGlobalRunnerBusy: Boolean, onRun: ()
                         tint = if (isRunningThisJob) TextSecondaryDark else HighPriorityColor.copy(alpha = 0.8f)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.weight(1f))
+                if (!isRunningThisJob) {
+                    OutlinedButton(
+                        onClick = onRunFail,
+                        enabled = !isGlobalRunnerBusy,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = HighPriorityColor),
+                        border = BorderStroke(1.dp, HighPriorityColor.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(36.dp).testTag("btn_fail_job_${job.id}")
+                    ) {
+                        Icon(imageVector = Icons.Default.BugReport, contentDescription = "Fail Suite", modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Simulate Failure", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Button(
                     onClick = onRun,
                     enabled = !isGlobalRunnerBusy,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    modifier = Modifier.height(36.dp)
+                    modifier = Modifier.height(36.dp).testTag("btn_run_job_${job.id}")
                 ) {
                     if (isRunningThisJob) {
                         CircularProgressIndicator(
@@ -2118,11 +2825,11 @@ fun PlaywrightJobItem(job: PlaywrightJob, isGlobalRunnerBusy: Boolean, onRun: ()
                             strokeWidth = 1.5.dp
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Executing...", fontSize = 12.sp)
+                        Text("Executing...", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimary)
                     } else {
                         Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Run Playwright Job", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Trigger Playwright Run", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Run Suite", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

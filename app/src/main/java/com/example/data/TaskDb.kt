@@ -49,7 +49,8 @@ data class PlaywrightJob(
     val lastRunTime: Long = 0L,
     val cronSchedule: String = "Manual",
     val durationMs: Long = 0L,
-    val logOutput: String = ""
+    val logOutput: String = "",
+    val isHighPriority: Boolean = false
 )
 
 // --- DAO ---

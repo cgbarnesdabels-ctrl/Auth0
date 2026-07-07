@@ -15,6 +15,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import org.json.JSONArray
+
+data class DriveFile(
+    val id: String,
+    val name: String,
+    val mimeType: String,
+    val size: String,
+    val lastModified: String
+)
+
+data class EmailMessage(
+    val id: String,
+    val sender: String,
+    val subject: String,
+    val snippet: String,
+    val date: String,
+    val isRead: Boolean
+)
+
+
 class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
 
     // --- Database Observables ---
@@ -38,6 +63,25 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    // --- Workspace State ---
+    val workspaceLogin = MutableStateFlow("dabelstech")
+
+    // --- Emails App Integration State ---
+    val isEmailConnected = MutableStateFlow(false)
+    val connectedEmailAddress = MutableStateFlow("")
+    val syncedEmails = MutableStateFlow<List<EmailMessage>>(emptyList())
+    val isConnectingEmail = MutableStateFlow(false)
+
+    // --- Google Drive Integration State ---
+    val isGoogleDriveConnected = MutableStateFlow(false)
+    val driveUserEmail = MutableStateFlow("")
+    val driveFiles = MutableStateFlow<List<DriveFile>>(emptyList())
+    val isConnectingDrive = MutableStateFlow(false)
+
+    // --- Gemini AI Analysis State ---
+    val playwrightSummary = MutableStateFlow("")
+    val isGeneratingSummary = MutableStateFlow(false)
 
     // --- Auth0 State ---
     val isLoggedIn = MutableStateFlow(true) // Start logged in for elegant first-time setup, but can login/logout
@@ -133,7 +177,8 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                             lastRunTime = System.currentTimeMillis() - 1200000,
                             cronSchedule = "0 */3 * * *", // every 3 hours
                             durationMs = 4210,
-                            logOutput = "[info] Launching Chromium headless...\n[navigation] Goto https://auth.dabelstech.com/login\n[action] Fill email & password\n[action] Click 'Continue'\n[status] Dashboard loaded. JWT generated. Run completed successfully."
+                            logOutput = "[info] Launching Chromium headless...\n[navigation] Goto https://auth.dabelstech.com/login\n[action] Fill email & password\n[action] Click 'Continue'\n[status] Dashboard loaded. JWT generated. Run completed successfully.",
+                            isHighPriority = true
                         )
                     )
                     repository.insertPlaywrightJob(
@@ -145,9 +190,67 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                             lastRunTime = System.currentTimeMillis() - 7200000,
                             cronSchedule = "0 0 * * *", // daily
                             durationMs = 3150,
-                            logOutput = "[info] Launching WebKit...\n[navigation] Goto https://dabelstech.com\n[assert] H1 tag present\n[assert] Meta description present\n[status] SEO criteria satisfied."
+                            logOutput = "[info] Launching WebKit...\n[navigation] Goto https://dabelstech.com\n[assert] H1 tag present\n[assert] Meta description present\n[status] SEO criteria satisfied.",
+                            isHighPriority = false
                         )
                     )
+                }
+            }
+        }
+
+        // --- Background Worker: Playwright Failure Monitor ---
+        viewModelScope.launch {
+            delay(1000) // allow database and seed to settle
+            val processedFailures = mutableSetOf<String>()
+            var isWorkerReady = false
+            
+            repository.allPlaywrightJobs.collect { jobs ->
+                val failedHighPriorityJobs = jobs.filter { it.isHighPriority && it.status == "Failed" }
+                
+                if (!isWorkerReady) {
+                    // Populate already failed runs to avoid spamming alerts on app startup
+                    for (job in failedHighPriorityJobs) {
+                        processedFailures.add("${job.id}_${job.lastRunTime}")
+                    }
+                    isWorkerReady = true
+                } else {
+                    for (job in failedHighPriorityJobs) {
+                        val runKey = "${job.id}_${job.lastRunTime}"
+                        if (!processedFailures.contains(runKey)) {
+                            processedFailures.add(runKey)
+                            
+                            // Trigger email notification via integrated email service
+                            if (isEmailConnected.value) {
+                                val recipient = connectedEmailAddress.value
+                                val newEmail = EmailMessage(
+                                    id = System.currentTimeMillis().toString(),
+                                    sender = "playwright-monitor@dabelstech.com",
+                                    subject = "[CRITICAL ALERT] High-Priority Job Fail: ${job.name}",
+                                    snippet = "DabelsTech E2E automation job '${job.name}' failed on execution profile: ${job.scriptType} at ${job.targetUrl}. Verify logs.",
+                                    date = "Just now",
+                                    isRead = false
+                                )
+                                syncedEmails.value = listOf(newEmail) + syncedEmails.value
+                                
+                                repository.insertLog(
+                                    SecurityLog(
+                                        eventType = "EMAIL_DISPATCH",
+                                        message = "Alert email sent for failed high-priority job: ${job.name}",
+                                        details = "Delivered to connected SMTP/IMAP address: $recipient"
+                                    )
+                                )
+                            } else {
+                                // Log that the alert was triggered but email dispatch was skipped
+                                repository.insertLog(
+                                    SecurityLog(
+                                        eventType = "EMAIL_DISPATCH",
+                                        message = "Email dispatch skipped: Service disconnected",
+                                        details = "High-priority job failed: ${job.name} (Requires SMTP connection)"
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -378,27 +481,28 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     }
 
     // --- Playwright Job Actions ---
-    fun createPlaywrightJob(name: String, targetUrl: String, scriptType: String, cronSchedule: String) {
+    fun createPlaywrightJob(name: String, targetUrl: String, scriptType: String, cronSchedule: String, isHighPriority: Boolean = false) {
         viewModelScope.launch {
             val job = PlaywrightJob(
                 name = name,
                 targetUrl = targetUrl,
                 scriptType = scriptType,
                 cronSchedule = cronSchedule,
-                status = "Idle"
+                status = "Idle",
+                isHighPriority = isHighPriority
             )
             repository.insertPlaywrightJob(job)
             repository.insertLog(
                 SecurityLog(
                     eventType = "PLAYWRIGHT_EXEC",
-                    message = "Created E2E browser automation job: '$name'",
-                    details = "Target URL: $targetUrl | Script: $scriptType | Cron: $cronSchedule"
+                    message = "Created E2E browser automation job: '$name' ${if (isHighPriority) "[HIGH PRIORITY]" else ""}",
+                    details = "Target URL: $targetUrl | Script: $scriptType | Cron: $cronSchedule | High Priority: $isHighPriority"
                 )
             )
         }
     }
 
-    fun runPlaywrightJob(job: PlaywrightJob) {
+    fun runPlaywrightJob(job: PlaywrightJob, forceFail: Boolean = false) {
         viewModelScope.launch {
             if (runningJobId.value != null) return@launch // prevent running parallel on simulation UI
 
@@ -416,19 +520,34 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                 )
             )
 
-            val logSteps = listOf(
-                "Initializing DabelsTech headless runner environment...",
-                "Pulling playwright/chromium:latest container image...",
-                "Launching headless Chromium browser (viewport: 1280x800)...",
-                "Navigating to: ${job.targetUrl}",
-                "Page content-type: text/html loaded in 842ms.",
-                "Executing automated script actions...",
-                "Waiting for network idle state (0 active connections)...",
-                "Bypassing potential bot detection heuristics...",
-                "Asserting page assertions and validating HTML DOM state...",
-                "Capturing reference snapshot screenshot of full page...",
-                "Playwright execution completed. Releasing sandbox container assets."
-            )
+            val logSteps = if (forceFail) {
+                listOf(
+                    "Initializing DabelsTech headless runner environment...",
+                    "Pulling playwright/chromium:latest container image...",
+                    "Launching headless Chromium browser (viewport: 1280x800)...",
+                    "Navigating to: ${job.targetUrl}",
+                    "Page content-type: text/html loaded in 842ms.",
+                    "Executing automated script actions...",
+                    "Error: Connection reset by peer at: ${job.targetUrl}",
+                    "Warning: Playwright failed to assert page DOM state.",
+                    "Capturing exception trace logs...",
+                    "Terminating sandbox container due to assertion failure."
+                )
+            } else {
+                listOf(
+                    "Initializing DabelsTech headless runner environment...",
+                    "Pulling playwright/chromium:latest container image...",
+                    "Launching headless Chromium browser (viewport: 1280x800)...",
+                    "Navigating to: ${job.targetUrl}",
+                    "Page content-type: text/html loaded in 842ms.",
+                    "Executing automated script actions...",
+                    "Waiting for network idle state (0 active connections)...",
+                    "Bypassing potential bot detection heuristics...",
+                    "Asserting page assertions and validating HTML DOM state...",
+                    "Capturing reference snapshot screenshot of full page...",
+                    "Playwright execution completed. Releasing sandbox container assets."
+                )
+            }
 
             val startTime = System.currentTimeMillis()
             
@@ -438,9 +557,14 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
             }
 
             val duration = System.currentTimeMillis() - startTime
-            val finalStatus = "Success" // Always succeed for demonstration
+            val finalStatus = if (forceFail) "Failed" else "Success"
 
-            val finalLogs = activeJobLogs.value + "[success] Job finished with 0 errors in ${duration}ms."
+            val finalLogs = if (forceFail) {
+                activeJobLogs.value + "[error] Job execution failed with 1 error in ${duration}ms."
+            } else {
+                activeJobLogs.value + "[success] Job finished with 0 errors in ${duration}ms."
+            }
+
             val completedJob = job.copy(
                 status = finalStatus,
                 lastRunTime = System.currentTimeMillis(),
@@ -454,8 +578,8 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
             repository.insertLog(
                 SecurityLog(
                     eventType = "PLAYWRIGHT_EXEC",
-                    message = "E2E Playwright run succeeded for: ${job.name}",
-                    details = "Duration: ${duration}ms | Status: SUCCESS"
+                    message = if (forceFail) "E2E Playwright run failed for: ${job.name}" else "E2E Playwright run succeeded for: ${job.name}",
+                    details = "Duration: ${duration}ms | Status: ${finalStatus.uppercase()}"
                 )
             )
         }
@@ -477,6 +601,188 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     fun clearSecurityLogs() {
         viewModelScope.launch {
             repository.clearLogs()
+        }
+    }
+
+    // --- Emails and Google Drive Connection Actions ---
+    fun connectEmails(email: String) {
+        viewModelScope.launch {
+            isConnectingEmail.value = true
+            delay(1500)
+            isEmailConnected.value = true
+            connectedEmailAddress.value = email
+            isConnectingEmail.value = false
+            
+            // Populate simulated synced emails
+            val existing = syncedEmails.value
+            syncedEmails.value = existing + listOf(
+                EmailMessage("1", "security-alert@auth0.com", "New Login Detected", "New Login Detected from Chrome Android", "10:45 AM", false),
+                EmailMessage("2", "playwright-monitor@dabelstech.com", "Job Succeeded", "Job 'SEO Meta and Header Auditor' succeeded", "9:15 AM", true),
+                EmailMessage("3", "marketing-leads@hubspot.com", "New Leads Generated", "5 New Trial Signups in Last 24 Hours", "Yesterday", true),
+                EmailMessage("4", "billing@dabelstech.com", "Payment Complete", "Invoice Paid Successfully - $49.00/mo Plan", "Jul 5", true)
+            )
+
+            repository.insertLog(
+                SecurityLog(
+                    eventType = "EMAIL_DISPATCH",
+                    message = "Connected emails app to $email",
+                    details = "IMAP/SMTP sync workspace active. 4 recent emails synchronized."
+                )
+            )
+        }
+    }
+
+    fun disconnectEmails() {
+        viewModelScope.launch {
+            isEmailConnected.value = false
+            connectedEmailAddress.value = ""
+            syncedEmails.value = emptyList()
+            repository.insertLog(
+                SecurityLog(
+                    eventType = "EMAIL_DISPATCH",
+                    message = "Disconnected emails app",
+                    details = "Cleared cached email synchronization session."
+                )
+            )
+        }
+    }
+
+    fun connectGoogleDrive(email: String) {
+        viewModelScope.launch {
+            isConnectingDrive.value = true
+            delay(1500)
+            isGoogleDriveConnected.value = true
+            driveUserEmail.value = email
+            isConnectingDrive.value = false
+
+            // Populate simulated synced drive files
+            driveFiles.value = listOf(
+                DriveFile("1", "E2E_Test_Plan_2026.docx", "Document", "2.4 MB", "Jul 6, 2026"),
+                DriveFile("2", "Automation_Metrics_Q2.xlsx", "Spreadsheet", "15.8 MB", "Jul 4, 2026"),
+                DriveFile("3", "DabelsTech_Logo_Asset.png", "Image", "412 KB", "Jun 28, 2026"),
+                DriveFile("4", "Security_Postures_Report.pdf", "PDF", "1.2 MB", "Jun 15, 2026")
+            )
+
+            repository.insertLog(
+                SecurityLog(
+                    eventType = "API_INVOCATION",
+                    message = "Connected Google Drive workspace for $email",
+                    details = "Drive OAuth integration authorized. Synced 4 core files."
+                )
+            )
+        }
+    }
+
+    fun disconnectGoogleDrive() {
+        viewModelScope.launch {
+            isGoogleDriveConnected.value = false
+            driveUserEmail.value = ""
+            driveFiles.value = emptyList()
+            repository.insertLog(
+                SecurityLog(
+                    eventType = "API_INVOCATION",
+                    message = "Disconnected Google Drive workspace",
+                    details = "Revoked Drive file-access OAuth permissions."
+                )
+            )
+        }
+    }
+
+    fun generatePlaywrightSummaryWithGemini() {
+        viewModelScope.launch {
+            isGeneratingSummary.value = true
+            playwrightSummary.value = "Consulting Gemini AI Automation Intelligence..."
+            
+            val jobs = playwrightJobs.value
+            if (jobs.isEmpty()) {
+                playwrightSummary.value = "No Playwright jobs are configured yet. Please configure some E2E jobs first in the Playwright tab so Gemini can analyze them."
+                isGeneratingSummary.value = false
+                return@launch
+            }
+
+            // Construct jobs description list
+            val jobsStr = jobs.joinToString("\n") { job ->
+                "- Name: ${job.name}, Target: ${job.targetUrl}, Script: ${job.scriptType}, Status: ${job.status}, Last Run Time: ${if (job.lastRunTime > 0) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(job.lastRunTime)) else "Never"}"
+            }
+
+            val prompt = """
+                You are DabelsTech's Lead AI E2E Quality & Automation Engineer. Below is a list of configured Playwright browser automation jobs in our test suite.
+                Your task:
+                1. Provide a concise, highly readable executive summary of these jobs, calling out any failures, runs, or idle statuses.
+                2. Suggest an optimized execution priority queue (e.g. Critical, High, Medium, Low) based on the target URL (production vs login vs staging) and current status. Specify which job should run first.
+                3. Offer 2 actionable tips for improving our E2E browser automation stability.
+
+                Here is the list of configured Playwright jobs:
+                $jobsStr
+
+                Format your response using bold Markdown headings and bullet points for beautiful rendering on our Slate dashboard.
+            """.trimIndent()
+
+            // Call Gemini via OkHttp directly
+            val response = callGemini(prompt)
+            playwrightSummary.value = response
+            isGeneratingSummary.value = false
+
+            repository.insertLog(
+                SecurityLog(
+                    eventType = "PLAYWRIGHT_EXEC",
+                    message = "Gemini AI Job Prioritization Completed",
+                    details = "Analyzed ${jobs.size} jobs. Result summary generated."
+                )
+            )
+        }
+    }
+
+    private suspend fun callGemini(prompt: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext "Error: Gemini API key is not configured. Please add your key to the Secrets panel in AI Studio."
+        }
+        
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        
+        val jsonBody = JSONObject().apply {
+            put("contents", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", prompt)
+                        })
+                    })
+                })
+            })
+        }
+        
+        val mediaType = "application/json".toMediaType()
+        val body = jsonBody.toString().toRequestBody(mediaType)
+        
+        val client = OkHttpClient.Builder()
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+            
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .build()
+            
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext "Error: API call failed with code ${response.code} - ${response.message}"
+                }
+                val bodyString = response.body?.string() ?: return@withContext "Error: Empty response body"
+                val jsonResponse = JSONObject(bodyString)
+                val candidates = jsonResponse.optJSONArray("candidates")
+                val firstCandidate = candidates?.optJSONObject(0)
+                val content = firstCandidate?.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                val firstPart = parts?.optJSONObject(0)
+                firstPart?.optString("text") ?: "Error: No text in response candidates"
+            }
+        } catch (e: Exception) {
+            "Error calling Gemini: ${e.localizedMessage}"
         }
     }
 }
