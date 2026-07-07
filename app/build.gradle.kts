@@ -21,6 +21,11 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    
+    manifestPlaceholders += mapOf(
+        "auth0Domain" to "dabelstech.us.auth0.com",
+        "auth0Scheme" to "com.dabelstech.authapp"
+    )
   }
 
   signingConfigs {
@@ -100,6 +105,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services.auth)
+  implementation(libs.auth0)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
